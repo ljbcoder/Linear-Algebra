@@ -1,3 +1,4 @@
+
 import random
 from fractions import Fraction
 
@@ -52,6 +53,26 @@ class Matrix:
       return 1
     else:
       return 1 + self.dim(a[0])
+
+
+  def to_float(self):
+    #Converts matrix to float
+    float_matrix = []
+    if self.matrix is None:
+      return Matrix([[] for _ in range(self.dims)])
+
+    elif type(self.matrix) == int or type(self.matrix) == float:
+      return Matrix([[float(self.matrix)]])
+    #Matrix is a 2d tensor --> Leave it at 2
+    elif type(self.matrix) == list:
+      if (self.dim(self.matrix)<2):
+        return Matrix([[float(i)] for i in self.matrix])
+      elif (self.correct_format(self.matrix)):
+        return Matrix([[float(item) for item in sublist] for sublist in self.matrix])
+
+      else:
+        raise Exception("Error: Cannot Convert")
+
 
   #Magic Methods
   def __call__(self):
@@ -126,6 +147,11 @@ class Matrix:
         final_matrix = final_matrix.matrix_multiply(self)
       return final_matrix
 
+
+  def dot(self, m2):
+    return self * m2.transpose()
+
+
   #Mutators
   def set_random_matrix(self, m, n, min_val=0, max_val=9):
     #Creates a random matrix of size m,n filled with values between min_val and max_val
@@ -147,9 +173,9 @@ class Matrix:
     #Creates an identity matrix of size s
     self.matrix = [[(1 if i == j else 0) for i in range(s)] for j in range(s)]
 
-  def set_zero_matrix(self,s):
+  def set_zero_matrix(self,a,b):
     #Creates a zero matrix of size s
-    self.matrix = [[0 for i in range(s)] for j in range(s)]
+    self.matrix = [[0 for i in range(b)] for j in range(a)]
 
   def set_ones_matrix(self,s):
     #Creates a ones matrix of size s
@@ -183,8 +209,60 @@ class Matrix:
         idx += 1
     self.matrix = final_matrix
 
+  def get_column(self, col_idx):
+      if type(col_idx) == int:
+        if col_idx < 0 or col_idx >= len(self.matrix[0]):
+            raise IndexError("Column index out of bounds")
+        new_matrix = Matrix([row[col_idx] for row in self.matrix])
+        return new_matrix.transpose()
 
+      elif type(col_idx) == list:
+        return Matrix([self.get_column(i) for i in col_idx])
 
+  def get_row(self, row_idx):
+      a,b = self.size()
+      n = min(a,b)
+      if type(row_idx) == int:
+        if row_idx < 0 or row_idx >= n:
+            raise IndexError("Row index out of bounds")
+        return Matrix(self.matrix[row_idx])
+      elif type(row_idx) == list:
+        return Matrix([self.get_row(i) for i in row_idx])
+
+  def slice_rows(self, start, end):
+      return Matrix(self.matrix[start:end])
+
+  def slice_columns(self, start, end):
+      return Matrix([row[start:end] for row in self.matrix])
+
+  def replace_row(self, row_idx, new_row):
+    a,b = self.size()
+    n = min(a,b)
+    if row_idx < 0 or row_idx >= n:
+        raise IndexError("Row index out of bounds")
+
+    if type(new_row) == list:
+        self.matrix[row_idx] = new_row
+    elif type(new_row) == Matrix:
+        self.matrix[row_idx] = new_row.matrix[0]
+
+    
+
+  def replace_col(self, col_idx, new_col):
+    a,b = self.size()
+    n = min(a,b)
+    if col_idx < 0 or col_idx >= n:
+        raise IndexError("Column index out of bounds")
+
+    # Replace the column
+    if type(new_col) == list: 
+      for i in range(b):
+          self.matrix[i][col_idx] = new_col[i]
+    elif type(new_col) == Matrix:
+      for i in range(b):
+          self.matrix[i][col_idx] = new_col.matrix[i][0]
+
+  
   #Methods
   def size(self):
     #Returns the size of matrix
@@ -282,7 +360,7 @@ class Matrix:
           pivot = rref_matrix[pivot_pos][pivot_pos]
           break
 
-    for pivot_pos in range(min(a, b - right_side)):
+    for pivot_pos in range(min(a, b - right_side+1)):
       pivot = rref_matrix[pivot_pos][pivot_pos]
 
       # Normalize the pivot row (divide by pivot value)
@@ -405,7 +483,7 @@ class Matrix:
           ref_matrix[row] = [ref_matrix[row][i] - factor * ref_matrix[pivot_pos][i] for i in range(b)]
       else:
           ref_matrix = [[float(x) for x in row] for row in ref_matrix]
-          return Matrix(ref_matrix), scale
+          return Matrix(ref_matrix),scale
 
 
     ref_matrix = [[float(x) for x in row] for row in ref_matrix]
@@ -421,6 +499,146 @@ class Matrix:
       raise Exception("Determinant of ", self.matrix, "does not exist")
 
     return self.REF_for_det()[1]
+
+
+  def qr_decomposition(self):
+    """
+    Performs QR decomposition using the Gram-Schmidt process.
+    Returns matrices Q and R such that A = Q * R.
+    """
+    n_rows, n_cols = self.size()
+    
+    Q = [[0] * n_cols for _ in range(n_rows)]  # Initialize Q
+    R = [[0] * n_cols for _ in range(n_cols)]  # Initialize R
+    
+    for k in range(n_cols):
+        # Copy the k-th column of A to start the process
+        Q_k = [row[k] for row in self.matrix]
+        
+        # Orthogonalize against previous Q columns
+        for j in range(k):
+            Q_j = [row[j] for row in Q]
+            R[j][k] = self.dot_product_vector(Q_j, Q_k)  # Compute R[j, k]
+            Q_k = self.vector_subtract(Q_k, self.scalar_multiply_vector(Q_j, R[j][k]))
+        
+        # Compute the norm for Q_k and normalize
+        R[k][k] = self.vector_norm(Q_k)
+        Q_k = self.scalar_multiply_vector(Q_k, 1 / R[k][k])
+        
+        # Place the normalized vector into the k-th column of Q
+        for i in range(n_rows):
+            Q[i][k] = Q_k[i]
+    
+    return Matrix(Q), Matrix(R)
+
+  def make_similar(self):
+    Q,R = self.qr_decomposition()
+    B = R.dot(Q)
+    return B
+
+  def eigenvalues(self, tolerance = 1e-10):
+    B = self.make_similar()
+    iters = 0
+    leig = B.matrix[-1][-1]
+    diff = 1
+    while diff> tolerance:
+      B = B.make_similar()
+      iters += 1
+      diff = abs(leig - B.matrix[-1][-1])
+      leig = B.matrix[-1][-1]
+    eigs = [B.matrix[i][i] for i in range(len(B.matrix))]
+
+    return eigs
+
+
+  def eigenvectors(self):
+      """
+      Computes the eigenvectors of the matrix by solving the null space of (A - λI).
+      """
+      all_eigenvectors = []
+      all_eigenvalues = self.eigenvalues()
+      a, b = self.size()
+      
+      I = Matrix()
+      I.set_identity_matrix(b)  # Identity matrix of appropriate size
+
+      for eigenvalue in all_eigenvalues:
+          # Characteristic Equation: C = A - λI
+          C = self - (eigenvalue * I)
+          C = C.RREF()  # Reduce the matrix to RREF to solve for null space
+
+          rows, cols = C.size()
+
+          # Step 1: Identify pivot columns
+          pivot_columns = []
+          for row in range(rows):
+              for col in range(cols):
+                  if C.matrix[row][col] != 0:
+                      pivot_columns.append(col)
+                      break
+
+          # Step 2: Identify free variables
+          free_variables = [col for col in range(cols) if col not in pivot_columns]
+
+          # Step 3: Solve for the null space
+          for free_var in free_variables:
+              vector = [0] * cols
+              vector[free_var] = 1  # Assign 1 to the free variable
+              
+              # Solve for pivot variables by back substitution
+              for row in range(rows - 1, -1, -1):  # Iterate over rows backward
+                  pivot_col = -1
+                  for col in range(cols):
+                      if C.matrix[row][col] != 0:  # Find the pivot column
+                          pivot_col = col
+                          break
+                  
+                  if pivot_col != -1:  # Solve for pivot variable
+                      vector[pivot_col] = -sum(
+                          C.matrix[row][col] * vector[col] for col in range(pivot_col + 1, cols)
+                      )
+
+              # Append the eigenvector (as a column vector)
+              eigenvector = Matrix([vector]).transpose()
+              all_eigenvectors.append(eigenvector)
+
+      return all_eigenvectors
+
+
+
+  def eigen_results(self):
+    eigenvalue_matrix = self.eigenvalues()
+    eigenvalue_matrix = Matrix(eigenvalue_matrix)
+    eigenvalue_matrix = eigenvalue_matrix.transpose()
+
+
+
+    all_eigenvectors = self.eigenvectors()
+    if len(all_eigenvectors) == 0:
+      return eigenvalue_matrix,Matrix()
+    original = all_eigenvectors[0]
+    for i in range(1, len(all_eigenvectors)):
+      original = original.augmented_matrix(all_eigenvectors[i])
+
+    eigenvector_matrix = original
+    return eigenvalue_matrix,eigenvector_matrix
+
+  def dot_product_vector(self, vec1, vec2):
+    """Calculates the dot product of two vectors."""
+    return sum(x * y for x, y in zip(vec1, vec2))
+
+  def vector_norm(self, vec):
+      """Calculates the Euclidean norm of a vector."""
+      return sum(x**2 for x in vec) ** 0.5
+
+  def scalar_multiply_vector(self, vec, scalar):
+      """Multiplies a vector by a scalar."""
+      return [x * scalar for x in vec]
+
+  def vector_subtract(self, vec1, vec2):
+      """Subtracts one vector from another."""
+      return [x - y for x, y in zip(vec1, vec2)]
+
 
 
 
